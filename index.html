@@ -37,15 +37,15 @@ footer{text-align:center;color:#c7d8ce;font-size:.85rem;margin-top:24px}
 <header><div class="tree">🎄✨🎁</div><h1>Santa's Secret Draw</h1><p>A little Christmas magic for six…</p></header>
 
 <section id="setup" class="panel">
-<h2>🎅 Create your Secret Santa room</h2>
+<h2>🎅 Create a new Secret Santa room</h2>
 <p class="note">Enter all six names once. Make sure every name is unique.</p>
 <div class="names" id="nameFields"></div>
 <button class="primary" id="createBtn">Create Christmas Game</button>
 <p id="setupMsg" class="note"></p>
 </section>
 
-<section id="join" class="panel hidden">
-<h2>🔔 Join the game</h2>
+<section id="join" class="panel">
+<h2>🔔 Join an existing room</h2>
 <p class="note">Ask the organiser for the room code, then enter it below.</p>
 <label for="roomCode">Room code</label><div class="row"><input id="roomCode" maxlength="6" placeholder="e.g. HOLLY7" autocomplete="off"><button id="joinBtn">Join</button></div>
 <p id="joinMsg" class="note"></p>
@@ -54,7 +54,7 @@ footer{text-align:center;color:#c7d8ce;font-size:.85rem;margin-top:24px}
 <section id="game" class="hidden">
 <div class="panel">
 <div class="status"><span>🎄 Room: <strong id="roomLabel"></strong></span><span id="drawCount">0 of 6 gifts drawn</span></div>
-<p class="note">Choose your own name below, then draw once. Your recipient is shown only on this device's screen. The crossed-out list updates for everyone.</p>
+<p class="note">Choose your own name below, then draw once. Your recipient is saved only in this browser on this device; the shared room shows only which names have drawn and which recipients have been picked.</p>
 <label for="playerSelect">I am…</label><select id="playerSelect" style="width:100%;padding:13px;border-radius:10px;background:#fffaf0;color:#18382d;font:inherit"></select>
 <button class="primary" id="drawBtn">🎁 Draw my Secret Santa name</button>
 <div id="result" class="result hidden" aria-live="polite"><div class="gift">🎁</div><div>Your Secret Santa recipient is…</div><strong id="recipient"></strong><div class="note">Shhh! Keep it a secret 🤫</div></div>
@@ -68,7 +68,7 @@ footer{text-align:center;color:#c7d8ce;font-size:.85rem;margin-top:24px}
 <div class="panel">
 <h2>🕯️ Share the room</h2>
 <p class="note">Everyone joins using the same room code on their own device.</p>
-<div class="row"><input id="shareCode" readonly><button class="secondary" id="copyBtn">Copy code</button></div>
+<div class="row"><input id="shareCode" readonly><button class="secondary" id="copyBtn">Copy code</button><button id="whatsappBtn">Share on WhatsApp</button></div>
 </div>
 </section>
 <footer>Made with Christmas cheer · One draw per person · No peeking! 🎅</footer>
@@ -76,9 +76,7 @@ footer{text-align:center;color:#c7d8ce;font-size:.85rem;margin-top:24px}
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script>
-// STEP 1: Replace the values below with your Firebase project's web-app config.
-// Firebase Console → Add project → Build → Realtime Database → Create database.
-// Register a Web App and paste its config here.
+// Firebase web app settings for the existing Secret Santa project.
 const firebaseConfig = {
   apiKey: "AIzaSyDfPRu7L5-Bn3AW62agg4fg2IU-WPjAVko",
   authDomain: "secret-santa-draw-snowdonia.firebaseapp.com",
@@ -88,91 +86,200 @@ const firebaseConfig = {
   messagingSenderId: "302442516342",
   appId: "1:302442516342:web:5ee2a31bcb4269038e7457"
 };
-// For a casual family game, configure Realtime Database rules to allow read/write
-// during the game. Anyone with the room code could technically inspect the data.
-// Do not use this demo for sensitive information.
 
 const $ = id => document.getElementById(id);
 const fields = $("nameFields");
-for(let i=1;i<=6;i++){const wrap=document.createElement("div");wrap.innerHTML=`<label for="name${i}">Player ${i}</label><input id="name${i}" maxlength="32" placeholder="Enter a name">`;fields.appendChild(wrap)}
+for(let i=1;i<=6;i++){
+  const wrap=document.createElement("div");
+  wrap.innerHTML=`<label for="name${i}">Player ${i}</label><input id="name${i}" maxlength="32" placeholder="Enter a name">`;
+  fields.appendChild(wrap);
+}
 let db=null, currentCode=null, currentRoom=null, unsubscribe=null;
-const configReady = !Object.values(firebaseConfig).some(v=>String(v).includes("PASTE_"));
 function initFirebase(){
-  if(!configReady) throw new Error("The game needs your Firebase project settings first. See the setup note below the game.");
   if(!firebase.apps.length) firebase.initializeApp(firebaseConfig);
   db=firebase.database();
 }
-function setMsg(id,msg,cls=""){const el=$(id);el.textContent=msg;el.className="note "+cls}
-function makeCode(){return "XMAS"+Math.random().toString(36).slice(2,5).toUpperCase()}
-function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
-function derangement(names){
-  for(let tries=0;tries<10000;tries++){
-    const recipients=shuffle([...names]);
-    if(recipients.every((n,i)=>n!==names[i])) return Object.fromEntries(names.map((n,i)=>[n,recipients[i]]));
-  }
-  throw new Error("Could not make a draw. Please try again.");
+function setMsg(id,msg,cls=""){
+  const el=$(id); el.textContent=msg; el.className="note "+cls;
 }
+function makeCode(){return "XMAS"+Math.random().toString(36).slice(2,5).toUpperCase();}
+function shuffle(a){
+  const out=[...a];
+  for(let i=out.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[out[i],out[j]]=[out[j],out[i]];}
+  return out;
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+function localKey(code,player){return "santaDraw:"+code+":"+encodeURIComponent(player);}
+function getLocalDraw(code,player){
+  try{return localStorage.getItem(localKey(code,player));}catch(e){return null;}
+}
+function saveLocalDraw(code,player,recipient){
+  try{localStorage.setItem(localKey(code,player),recipient);}catch(e){}
+}
+
+// Returns true only if the remaining players can still be matched to
+// remaining recipients without anyone drawing themselves.
+function canComplete(players,recipients){
+  if(players.length===0)return true;
+  const player=[...players].sort((a,b)=>
+    recipients.filter(r=>r!==a).length-recipients.filter(r=>r!==b).length
+  )[0];
+  const rest=players.filter(p=>p!==player);
+  for(const recipient of recipients){
+    if(recipient===player)continue;
+    if(canComplete(rest,recipients.filter(r=>r!==recipient)))return true;
+  }
+  return false;
+}
+function stableScore(text){
+  let h=2166136261;
+  for(let i=0;i<text.length;i++){h^=text.charCodeAt(i);h=Math.imul(h,16777619);}
+  return h>>>0;
+}
+
 $("createBtn").onclick=async()=>{
   try{
     const names=Array.from({length:6},(_,i)=>$(`name${i+1}`).value.trim());
-    if(names.some(n=>!n)){setMsg("setupMsg","Please fill in all six names.","error");return}
-    if(new Set(names.map(n=>n.toLocaleLowerCase())).size!==6){setMsg("setupMsg","Every player must have a different name.","error");return}
-    initFirebase();$("createBtn").disabled=true;
-    let code=makeCode();let ref=db.ref("secretSantaRooms/"+code);
-    while((await ref.get()).exists()){code=makeCode();ref=db.ref("secretSantaRooms/"+code)}
-    const assignments=derangement(names);
-    await ref.set({names,assignments,drawn:{},createdAt:Date.now()});
-    setMsg("setupMsg","Your room is ready! Share the code with the other five players.","success");
+    if(names.some(n=>!n)){setMsg("setupMsg","Please fill in all six names.","error");return;}
+    if(new Set(names.map(n=>n.toLocaleLowerCase())).size!==6){setMsg("setupMsg","Every player must have a different name.","error");return;}
+    initFirebase(); $("createBtn").disabled=true;
+    let code=makeCode(), ref=db.ref("secretSantaRooms/"+code);
+    while((await ref.get()).exists()){code=makeCode();ref=db.ref("secretSantaRooms/"+code);}
+    // No complete assignment list is stored in the shared room.
+    await ref.set({names,drawnPlayers:{},usedRecipients:[],createdAt:Date.now()});
+    setMsg("setupMsg","Your room is ready! Share the WhatsApp link or room code.","success");
     enterRoom(code);
-  }catch(e){setMsg("setupMsg",e.message,"error");$("createBtn").disabled=false}
+  }catch(e){
+    setMsg("setupMsg",e.message,"error");
+    $("createBtn").disabled=false;
+  }
 };
-$("joinBtn").onclick=async()=>{
+
+async function joinRoom(){
   const code=$("roomCode").value.trim().toUpperCase();
-  if(!code){setMsg("joinMsg","Enter the room code first.","error");return}
-  try{initFirebase();const snap=await db.ref("secretSantaRooms/"+code).get();if(!snap.exists()){setMsg("joinMsg","We couldn't find that room. Check the code.","error");return}enterRoom(code)}
-  catch(e){setMsg("joinMsg",e.message,"error")}
-};
+  if(!code){setMsg("joinMsg","Enter the room code first.","error");return;}
+  try{
+    initFirebase();
+    const snap=await db.ref("secretSantaRooms/"+code).get();
+    if(!snap.exists()){setMsg("joinMsg","We couldn't find that room. Check the code.","error");return;}
+    const room=snap.val();
+    if(!room.names || !Array.isArray(room.names)){setMsg("joinMsg","That room is not compatible. Please ask the organiser to create a new room.","error");return;}
+    enterRoom(code);
+  }catch(e){setMsg("joinMsg",e.message,"error");}
+}
+$("joinBtn").onclick=joinRoom;
+
 function enterRoom(code){
-  currentCode=code;$("setup").classList.add("hidden");$("join").classList.add("hidden");$("game").classList.remove("hidden");
-  $("roomLabel").textContent=code;$("shareCode").value=code;
+  currentCode=code;
+  $("setup").classList.add("hidden");
+  $("join").classList.add("hidden");
+  $("game").classList.remove("hidden");
+  $("roomLabel").textContent=code;
+  $("shareCode").value=code;
   if(unsubscribe)unsubscribe();
   const ref=db.ref("secretSantaRooms/"+code);
-  const handler=snap=>{if(!snap.exists()){setMsg("gameMsg","This room no longer exists.","error");return}currentRoom=snap.val();render()};
-  ref.on("value",handler);unsubscribe=()=>ref.off("value",handler);
+  const handler=snap=>{
+    if(!snap.exists()){setMsg("gameMsg","This room no longer exists.","error");return;}
+    currentRoom=snap.val();render();
+  };
+  ref.on("value",handler);
+  unsubscribe=()=>ref.off("value",handler);
 }
+
 function render(){
-  const names=currentRoom.names||[],drawn=currentRoom.drawn||{};
-  const used=new Set(Object.values(drawn).map(x=>x.recipient));
-  $("drawCount").textContent=`${Object.keys(drawn).length} of 6 gifts drawn`;
+  if(!currentRoom)return;
+  const names=currentRoom.names||[];
+  const drawnPlayers=currentRoom.drawnPlayers||{};
+  const used=new Set(currentRoom.usedRecipients||[]);
+  $("drawCount").textContent=`${Object.keys(drawnPlayers).length} of 6 gifts drawn`;
   const select=$("playerSelect"),old=select.value;
   select.innerHTML='<option value="">Choose your name…</option>'+names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join("");
   if(names.includes(old))select.value=old;
-  $("nameList").innerHTML=names.map(n=>`<li class="${used.has(n)?"taken":""}"><span class="person">${escapeHtml(n)}</span>${used.has(n)?'<span class="tag">Picked ✓</span>':'<span class="tag">Available</span>'}</li>`).join("");
-  const player=select.value,record=drawn[player];
-  if(record){$("result").classList.remove("hidden");$("recipient").textContent=record.recipient;$("drawBtn").disabled=true;$("drawBtn").textContent="You've drawn your name ✓";setMsg("gameMsg","Your draw is saved for this room on this device.","success")}
-  else{$("result").classList.add("hidden");$("drawBtn").disabled=!player||Object.keys(drawn).length===6;$("drawBtn").textContent="🎁 Draw my Secret Santa name";if(player)setMsg("gameMsg","Ready when you are. You only get one draw.");else setMsg("gameMsg","Select your name to get started.")}
+  $("nameList").innerHTML=names.map(n=>
+    `<li class="${used.has(n)?"taken":""}"><span class="person">${escapeHtml(n)}</span>${used.has(n)?'<span class="tag">Picked ✓</span>':'<span class="tag">Available</span>'}</li>`
+  ).join("");
+
+  const player=select.value;
+  const saved=player?getLocalDraw(currentCode,player):null;
+  const alreadyDrawn=player && !!drawnPlayers[player];
+  if(saved){
+    $("result").classList.remove("hidden");
+    $("recipient").textContent=saved;
+    $("drawBtn").disabled=true;
+    $("drawBtn").textContent="You've drawn your name ✓";
+    setMsg("gameMsg","Your recipient is saved on this device. Keep it secret!","success");
+  }else{
+    $("result").classList.add("hidden");
+    $("drawBtn").disabled=!player||alreadyDrawn||Object.keys(drawnPlayers).length===6;
+    $("drawBtn").textContent="🎁 Draw my Secret Santa name";
+    if(alreadyDrawn)setMsg("gameMsg","This name has already drawn on another device. Use the original device to see that private result.","error");
+    else if(player)setMsg("gameMsg","Ready when you are. You only get one draw.");
+    else setMsg("gameMsg","Select your name to get started.");
+  }
 }
-function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 $("playerSelect").onchange=render;
+
 $("drawBtn").onclick=async()=>{
-  const player=$("playerSelect").value;if(!player||!currentCode)return;
-  $("drawBtn").disabled=true;setMsg("gameMsg","Drawing your name…");
+  const player=$("playerSelect").value;
+  if(!player||!currentCode||!currentRoom)return;
+  $("drawBtn").disabled=true;
+  setMsg("gameMsg","Drawing your name…");
   try{
     const ref=db.ref("secretSantaRooms/"+currentCode);
+    let recipientForThisAttempt=null;
     const result=await ref.transaction(room=>{
-      if(!room||!room.assignments||!room.names||!room.drawn)return;
-      if(room.drawn[player])return;
-      const recipient=room.assignments[player];
-      if(!recipient||recipient===player)return;
-      if(Object.values(room.drawn).some(x=>x.recipient===recipient))return;
-      room.drawn=room.drawn||{};
-      room.drawn[player]={recipient,drawnAt:Date.now()};
+      if(!room||!room.names||!room.names.includes(player))return;
+      room.drawnPlayers=room.drawnPlayers||{};
+      room.usedRecipients=room.usedRecipients||[];
+      if(room.drawnPlayers[player])return;
+      const remainingPlayers=room.names.filter(n=>!room.drawnPlayers[n]&&n!==player);
+      const availableRecipients=room.names.filter(n=>!room.usedRecipients.includes(n)&&n!==player);
+      const candidates=shuffle(availableRecipients).sort((a,b)=>
+        stableScore(currentCode+player+a+room.usedRecipients.length)-
+        stableScore(currentCode+player+b+room.usedRecipients.length)
+      );
+      let chosen=null;
+      for(const candidate of candidates){
+        const remainingRecipients=room.names.filter(n=>
+          !room.usedRecipients.includes(n)&&n!==candidate
+        );
+        if(canComplete(remainingPlayers,remainingRecipients)){chosen=candidate;break;}
+      }
+      if(!chosen)return;
+      recipientForThisAttempt=chosen;
+      room.drawnPlayers[player]=true;
+      room.usedRecipients.push(chosen);
       return room;
     });
-    if(!result.committed){setMsg("gameMsg","That name has already been drawn, or the room changed. Please refresh the room.","error")}
-  }catch(e){setMsg("gameMsg","Couldn't save your draw: "+e.message,"error")}
+    if(result.committed && recipientForThisAttempt){
+      saveLocalDraw(currentCode,player,recipientForThisAttempt);
+      $("recipient").textContent=recipientForThisAttempt;
+      $("result").classList.remove("hidden");
+      setMsg("gameMsg","Your draw is saved on this device. Shhh! Keep it secret.","success");
+    }else{
+      setMsg("gameMsg","A draw could not be completed. Refresh the room and try again, or ask the organiser for help.","error");
+    }
+  }catch(e){setMsg("gameMsg","Couldn't save your draw: "+e.message,"error");}
 };
-$("copyBtn").onclick=async()=>{try{await navigator.clipboard.writeText(currentCode);$("copyBtn").textContent="Copied!";setTimeout(()=>{$("copyBtn").textContent="Copy code"},1600)}catch(e){$("shareCode").select();document.execCommand("copy");$("copyBtn").textContent="Copied!"}};
+
+$("copyBtn").onclick=async()=>{
+  try{await navigator.clipboard.writeText(currentCode);$("copyBtn").textContent="Copied!";setTimeout(()=>{$("copyBtn").textContent="Copy code"},1600);}
+  catch(e){$("shareCode").select();document.execCommand("copy");$("copyBtn").textContent="Copied!";}
+};
+$("whatsappBtn").onclick=()=>{
+  const joinUrl=location.origin+location.pathname+"?room="+encodeURIComponent(currentCode);
+  const message="Join our Secret Santa game 🎄 Room code: "+currentCode+"\nOpen this link to join: "+joinUrl;
+  window.open("https://wa.me/?text="+encodeURIComponent(message),"_blank");
+};
+
+// A room-specific WhatsApp link opens directly into that room.
+const roomFromLink=new URLSearchParams(location.search).get("room");
+if(roomFromLink){
+  $("roomCode").value=roomFromLink.toUpperCase();
+  joinRoom();
+}
 </script>
 </body>
 </html>
