@@ -160,12 +160,13 @@ $("drawBtn").onclick=async()=>{
   try{
     const ref=db.ref("secretSantaRooms/"+currentCode);
     const result=await ref.transaction(room=>{
-      if(!room||!room.assignments||!room.names||!room.drawn)return;
+      if(!room||!room.assignments||!room.names)return;
+      // Realtime Database omits empty objects, so initialise drawn on first draw.
+      room.drawn=room.drawn||{};
       if(room.drawn[player])return;
       const recipient=room.assignments[player];
       if(!recipient||recipient===player)return;
-      if(Object.values(room.drawn).some(x=>x.recipient===recipient))return;
-      room.drawn=room.drawn||{};
+      if(Object.values(room.drawn).some(x=>x && x.recipient===recipient))return;
       room.drawn[player]={recipient,drawnAt:Date.now()};
       return room;
     });
